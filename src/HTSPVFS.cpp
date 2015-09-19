@@ -99,7 +99,10 @@ int CHTSPVFS::Read ( unsigned char *buf, unsigned int len )
   /* Read */
   int read = SendFileRead(buf, len);
 
-  m_offset += read;
+  /* Update */
+  if (read > 0)
+    m_offset += read;
+
   return read;
 }
 
@@ -238,22 +241,27 @@ long long CHTSPVFS::SendFileSeek ( int64_t pos, int whence, bool force )
   }
 
   if (m == NULL)
-    return false;
+  {
+    tvherror("vfs fileSeek failed");
+    return -1;
+  }
 
-  /* Get new offset. Note: 'offset' field is optional.*/
+  /* Get new offset */
   if (htsmsg_get_s64(m, "offset", &ret))
+  {
     ret = -1;
+    tvherror("vfs fileSeek response: 'offset' missing'");
 
-  htsmsg_destroy(m);
-  
   /* Update */
-  if (ret >= 0)
+  }
+  else
   {
     tvhtrace("vfs seek offset=%lld", (long long)ret);
     m_offset = ret;
   }
-  else
-    tvherror("vfs fileSeek failed");
+
+  /* Cleanup */
+  htsmsg_destroy(m);
 
   return ret;
 }
@@ -262,7 +270,7 @@ int CHTSPVFS::SendFileRead(unsigned char *buf, unsigned int len)
 {
   htsmsg_t   *m;
   const void **buffer;
-  size_t read = 0;
+  size_t read;
 
   /* Build */
   m = htsmsg_create_map();
@@ -279,16 +287,26 @@ int CHTSPVFS::SendFileRead(unsigned char *buf, unsigned int len)
   }
 
   if (m == NULL)
-    return -1;
-
-  /* Process */
-  if (htsmsg_get_bin(m, "data", buffer, &read))
   {
-    htsmsg_destroy(m);
-    tvherror("malformed fileRead response: 'data' missing");
+    tvherror("vfs fileRead failed");
+    return -1;
   }
 
+  /* Get Data */
+  if (htsmsg_get_bin(m, "data", buffer, &read))
+  {
+    tvherror("malformed fileRead response: 'data' missing");
+    read = -1;
+
   /* Store */
-  memcpy(buf, *buffer, read);
+  }
+  else
+  {
+    memcpy(buf, *buffer, read);
+  }
+
+  /* Cleanup */
+  htsmsg_destroy(m);
+
   return (int)read;
 }
